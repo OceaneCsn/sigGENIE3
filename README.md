@@ -4,13 +4,11 @@
 
 The [GENIE3 package](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0012776) is a method mased on machine learning to infer regulatory links between genes and regulators.
 
-GENIE3 takes as input a list of genes, that will be the nodes of the inferred network. Among those genes, some must be considered as potential regulators. 
+GENIE3 takes as input a list of genes, that will be the nodes of the inferred network. Among those genes, some must be considered as potential regulators. It can determine the influence of each regulator over each input gene expression profile, with ensemble trees regression.
 
-GENIE3 can determine the influence if every regulators over each input genes, using their respective expression profiles, using ensemble trees regression.
+For each target gene, the method fits Random Forests to provide a ranking of all regulators based on their importance on the target expression. 
 
-For each target gene, the methods uses Random Forests to provide a ranking of all regulators based on their importance on the target expression. 
-
-The idea is then to keep the strongest links to build the gene regulatory network. The way of choosing this minimal importance value needed to be included in the network is delicate, and no method was proposed in the original paper.
+The idea is then to keep the strongest links to build the gene regulatory network. The way of choosing this minimal importance value for a link to be included in the network is delicate, and no method was proposed in the original paper for this question.
 
 This code is a modified version of GENIE3, relying on the [rfPermute](https://rdrr.io/github/EricArcher/rfPermute/f/devel/rfPermtue%20ms/archer.Rmd) package to estimate pvalues for each regulattory link, instead of importance values that have to be arbitraily thresholded. 
 
