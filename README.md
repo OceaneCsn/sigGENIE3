@@ -1,6 +1,6 @@
-Gene Regulatory Network Inference with edges significance estimation
+**Gene Regulatory Network Inference with edges significance estimation**
 
-
+---
 
 The [GENIE3 package](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0012776) is a method mased on machine learning to infer regulatory links between genes and regulators.
 
