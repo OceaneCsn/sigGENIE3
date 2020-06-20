@@ -1,22 +1,6 @@
-# mtry <- setMtry(K, numRegulators)
-setMtry <- function(K, numRegulators)
-{
-  # set mtry
-  if (class(K) == "numeric") {
-    mtry <- K
-  } else if (K == "sqrt") {
-    mtry <- round(sqrt(numRegulators))
-  } else {
-    mtry <- numRegulators
-  }
-  
-  return(mtry)
-}
-
-
-#' @title GENIE3
+#' @title sigGENIE3
 #'
-#' @description \code{GENIE3} Infers a gene regulatory network (in the form of a weighted adjacency matrix) 
+#' @description \code{sigGENIE3} Infers a gene regulatory network (in the form of a pvalues-filled adjacency matrix) 
 #' from expression data, using ensembles of regression trees.
 #'
 #' @param exprMatrix Expression matrix (genes x samples). Every row is a gene, every column is a sample.
@@ -32,7 +16,6 @@ setMtry <- function(K, numRegulators)
 #' @param targets Subset of genes to which potential regulators will be calculated. Must be either 
 #' a vector of indices, e.g. \code{c(1,5,6,7)}, or a vector of gene names, e.g. \code{c("at_12377", "at_10912")}. 
 #' If NULL (default), regulators will be calculated for all genes in the input matrix.
-#' @param treeMethod Tree-based method used. Must be either "RF" for Random Forests (default) or "ET" for Extra-Trees.
 #' @param K Number of candidate regulators randomly selected at each tree node (for the determination of the best split). 
 #' Must be either "sqrt" for the square root of the total number of candidate regulators (default), 
 #' "all" for the total number of candidate regulators, or a stricly positive integer.
@@ -40,8 +23,11 @@ setMtry <- function(K, numRegulators)
 #' @param nCores Number of cores to use for parallel computing. Default: 1.
 #' @param verbose If set to TRUE, a feedback on the progress of the calculations is given. Default: FALSE.
 #'
-#' @return Weighted adjacency matrix of inferred network. Element w_ij (row i, column j) gives the 
-#' importance of the link from regulatory gene i to target gene j.
+#' @return list containing two adjacency matrix of inferred network.
+#' For pvalues, Element w_ij (row i, column j) gives the 
+#' pvalue of the link from regulatory gene i to target gene j.
+#' For pvalues, Element w_ij (row i, column j) gives the 
+#' fdr adjusted pvalue of the link from regulatory gene i to target gene j.
 #'
 #' @examples
 #' ## Generate fake expression matrix
@@ -49,43 +35,35 @@ setMtry <- function(K, numRegulators)
 #' rownames(exprMatrix) <- paste("Gene", 1:20, sep="")
 #' colnames(exprMatrix) <- paste("Sample", 1:5, sep="")
 #'
-#' ## Run GENIE3
+#' ## Run sigGENIE3
 #' set.seed(123) # For reproducibility of results
-#' weightMatrix <- GENIE3(exprMatrix, regulators=paste("Gene", 1:5, sep=""))
-#'
-#' ## Get ranking of edges
-#' linkList <- getLinkList(weightMatrix)
-#' head(linkList)
-#' @export
-setGeneric("GENIE3", signature = "exprMatrix",
+#' results <- sigGENIE3(exprMatrix, regulators=paste("Gene", 1:5, sep=""))
+setGeneric("sigGENIE3", signature = "exprMatrix",
            function(exprMatrix,
                     regulators = NULL,
                     targets = NULL,
-                    treeMethod = "RF",
                     K = "sqrt",
                     nTrees = 1000,
                     nCores = 1,
                     verbose = FALSE)
            {
-             standardGeneric("GENIE3")
+             standardGeneric("sigGENIE3")
            })
 
 #' @export
-setMethod("GENIE3", "matrix",
+setMethod("sigGENIE3", "matrix",
           function(exprMatrix,
                    regulators = NULL,
                    targets = NULL,
-                   treeMethod = "RF",
                    K = "sqrt",
                    nTrees = 1000,
                    nCores = 1,
                    verbose = FALSE)
           {
-            .GENIE3(
+            .sigGENIE3(
               exprMatrix = exprMatrix,
               regulators = regulators,
               targets = targets,
-              treeMethod = treeMethod,
               K = K,
               nTrees = nTrees,
               nCores = nCores,
@@ -94,11 +72,10 @@ setMethod("GENIE3", "matrix",
           })
 
 #' @export
-setMethod("GENIE3", "SummarizedExperiment",
+setMethod("sigGENIE3", "SummarizedExperiment",
           function(exprMatrix,
                    regulators = NULL,
                    targets = NULL,
-                   treeMethod = "RF",
                    K = "sqrt",
                    nTrees = 1000,
                    nCores = 1,
@@ -107,11 +84,10 @@ setMethod("GENIE3", "SummarizedExperiment",
             if (length(SummarizedExperiment::assays(exprMatrix)) > 1)
               warning("More than 1 assays are available. Only using the first one.")
             exprMatrix <- SummarizedExperiment::assay(exprMatrix)
-            .GENIE3(
+            .sigGENIE3(
               exprMatrix = exprMatrix,
               regulators = regulators,
               targets = targets,
-              treeMethod = treeMethod,
               K = K,
               nTrees = nTrees,
               nCores = nCores,
@@ -120,22 +96,20 @@ setMethod("GENIE3", "SummarizedExperiment",
           })
 
 #' @export
-setMethod("GENIE3", "ExpressionSet",
+setMethod("sigGENIE3", "ExpressionSet",
           function(exprMatrix,
                    regulators = NULL,
                    targets = NULL,
-                   treeMethod = "RF",
                    K = "sqrt",
                    nTrees = 1000,
                    nCores = 1,
                    verbose = FALSE)
           {
             exprMatrix <- Biobase::exprs(exprMatrix)
-            .GENIE3(
+            .sigGENIE3(
               exprMatrix = exprMatrix,
               regulators = regulators,
               targets = targets,
-              treeMethod = treeMethod,
               K = K,
               nTrees = nTrees,
               nCores = nCores,
@@ -143,11 +117,10 @@ setMethod("GENIE3", "ExpressionSet",
             )
           })
 
-.GENIE3 <-
+.sigGENIE3 <-
   function(exprMatrix,
            regulators,
            targets,
-           treeMethod,
            K,
            nTrees,
            nCores,
@@ -157,7 +130,6 @@ setMethod("GENIE3", "ExpressionSet",
       exprMatrix = exprMatrix,
       regulators = regulators,
       targets = targets,
-      treeMethod = treeMethod,
       K = K,
       nTrees = nTrees,
       nCores = nCores,
@@ -228,40 +200,26 @@ setMethod("GENIE3", "ExpressionSet",
     targetNames <- sort(targetNames)
     nGenes <- length(targetNames)
     rm(targets)
-    
-    # tree method
-    if (treeMethod == 'RF')
-    {
-      RF_randomisation <- 1
-      ET_randomisation <- 0
-      bootstrap_sampling <- 1
-    } else {
-      RF_randomisation <- 0
-      ET_randomisation <- 1
-      bootstrap_sampling <- 0
-    }
-    
+
     if (verbose)
       message(paste(
-        "Tree method: ",
-        treeMethod,
         "\nK: ",
         K,
         "\nNumber of trees: ",
         nTrees,
         sep = ""
       ))
-    # other default parameters
-    nmin <- 1
-    permutation_importance <- 0
-    
+
     # setup weight matrix
-    weightMatrix <-
+    fdrMatrix <-
       matrix(0.0,
              nrow = length(regulatorNames),
              ncol = length(targetNames))
-    rownames(weightMatrix) <- regulatorNames
-    colnames(weightMatrix) <- targetNames
+    rownames(fdrMatrix) <- regulatorNames
+    colnames(fdrMatrix) <- targetNames
+    
+    
+    pvalMatrix <- fdrMatrix
     
     print(nCores)
     print(!foreach::getDoParRegistered())
@@ -288,7 +246,7 @@ setMethod("GENIE3", "ExpressionSet",
       
       theseRegulatorNames <- setdiff(regulatorNames, targetName)
       numRegulators <- length(theseRegulatorNames)
-      mtry <- setMtry(K, numRegulators)
+      mtry <- .setMtry(K, numRegulators)
       
       x <- exprMatrixT[, theseRegulatorNames]
       y <- exprMatrixT[, targetName]
@@ -315,117 +273,37 @@ setMethod("GENIE3", "ExpressionSet",
         )
       
       pvals <- rfPermute::rp.importance(rf)[,"IncNodePurity.pval"]
+      print(head(pvals))
       pvals.names <- names(pvals)
-      #hist(pvals)
-      
-      fdr <- p.adjust(pvals, method = "fdr")
-      weightMatrix[pvals.names, targetName] <- fdr
-    }
-      
-      #hist(p.adjust(pvals), add = T)
+      print(head(pvals.names))
+      pvalMatrix[pvals.names, targetName] <- pvals
 
-      # rf <-
-      #   randomForest::randomForest(
-      #     x,
-      #     y,
-      #     mtry = mtry,
-      #     ntree = nTrees,
-      #     importance = FALSE,
-      #     nodesize = 1
-      #   )
-      # 
-      # im <- randomForest::importance(rf)[, "IncNodePurity"]
-      # im.names <- names(im)
-      
-      
-      #   ____________________________________________________________________________
-      
-      
-      
-    # } else
-    # {
-    #   # requireNamespace("foreach"); requireNamespace("doRNG"); requireNamespace("doParallel")
-    #   
-    #   # parallel computing
-    #   #if (!foreach::getDoParRegistered()) {
-    #   doParallel::registerDoParallel(cores = nCores)
-    #   #}
-    #   if (verbose)
-    #     message(paste("\nUsing", foreach::getDoParWorkers(), "cores."))
-    #   
-    #   # weightMatrix.reg <- foreach::foreach(targetName=targetNames, .combine=cbind) %dorng%
-    #   "%dopar%" <- foreach::"%dopar%"
-    #   suppressPackageStartupMessages(weightMatrix.reg <-
-    #                                    doRNG::"%dorng%"(
-    #                                      foreach::foreach(targetName = targetNames, .combine = cbind),
-    #                                      {
-    #                                        # remove target gene from input genes
-    #                                        theseRegulatorNames <-
-    #                                          setdiff(regulatorNames, targetName)
-    #                                        numRegulators <-
-    #                                          length(theseRegulatorNames)
-    #                                        
-    #                                        if (class(K) == "numeric") {
-    #                                          mtry <- K
-    #                                        } else if (K == "sqrt") {
-    #                                          mtry <- round(sqrt(numRegulators))
-    #                                        } else {
-    #                                          mtry <- numRegulators
-    #                                        }
-    #                                        
-    #                                        
-    #                                        #mtry <- setMtry(K, numRegulators)
-    #                                        
-    #                                        x <-
-    #                                          exprMatrixT[, theseRegulatorNames]
-    #                                        y <-
-    #                                          exprMatrixT[, targetName]
-    #                                        
-    #                                        #   ____________________________________________________________________________
-    #                                        
-    #                                        # Normalize output
-    #                                        y <-
-    #                                          y / sd(y)
-    #                                        
-    #                                        # By default, grow fully developed trees
-    #                                        rf <-
-    #                                          randomForest::randomForest(
-    #                                            x,
-    #                                            y,
-    #                                            mtry = mtry,
-    #                                            ntree = nTrees,
-    #                                            importance = FALSE,
-    #                                            nodesize = 1
-    #                                          )
-    #                                        print(rf)
-    #                                        
-    #                                        im <-
-    #                                          randomForest::importance(rf)[, "IncNodePurity"]
-    #                                        print(head(im))
-    #                                        
-    #                                        
-    #                                        c(setNames(0, targetName),
-    #                                          setNames(im, theseRegulatorNames))[regulatorNames]
-    #                                      }
-    #                                    ))
-    #   attr(weightMatrix.reg, "rng") <- NULL
-    #   weightMatrix[regulatorNames, ] <-
-    #     weightMatrix.reg[regulatorNames, ]
-    # }
-    
-    # weightMatrix[which(weightMatrix < 0, arr.ind=TRUE)] <- 0
-    
-    return(weightMatrix)
-    
+      fdr <- p.adjust(pvals, method = "fdr")
+      fdrMatrix[pvals.names, targetName] <- fdr
+    }
+    return(list(p.values = pvalMatrix, fdr = fdrMatrix))
   }
 
+# mtry <- setMtry(K, numRegulators)
+.setMtry <- function(K, numRegulators)
+{
+  # set mtry
+  if (class(K) == "numeric") {
+    mtry <- K
+  } else if (K == "sqrt") {
+    mtry <- round(sqrt(numRegulators))
+  } else {
+    mtry <- numRegulators
+  }
+  
+  return(mtry)
+}
 
 
 .checkArguments <-
   function(exprMatrix,
            regulators,
            targets,
-           treeMethod,
            K,
            nTrees,
            nCores,
@@ -456,10 +334,6 @@ setMethod("GENIE3", "ExpressionSet",
     if (length(nonUniqueGeneNames) > 0)
       stop("The following gene IDs (rownames) are not unique: ",
            paste(names(nonUniqueGeneNames), collapse = ", "))
-    
-    if (treeMethod != "RF" && treeMethod != "ET") {
-      stop("Parameter treeMethod must be \"RF\" (Random Forests) or \"ET\" (Extra-Trees).")
-    }
     
     if (K != "sqrt" && K != "all" && !is.numeric(K)) {
       stop("Parameter K must be \"sqrt\", or \"all\", or a strictly positive integer.")
