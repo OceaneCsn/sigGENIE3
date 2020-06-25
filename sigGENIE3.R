@@ -22,6 +22,9 @@
 #' @param nTrees Number of trees in an ensemble for each target gene. Default: 1000.
 #' @param nCores Number of cores to use for parallel computing. Default: 1.
 #' @param verbose If set to TRUE, a feedback on the progress of the calculations is given. Default: FALSE.
+#' 
+#' @param nShuffle Number of response permutations performed to estimate regulators null ditribution.
+#' Default:1000.
 #'
 #' @return list containing two adjacency matrix of inferred network.
 #' For pvalues, Element w_ij (row i, column j) gives the 
@@ -45,7 +48,8 @@ setGeneric("sigGENIE3", signature = "exprMatrix",
                     K = "sqrt",
                     nTrees = 1000,
                     nCores = 1,
-                    verbose = FALSE)
+                    verbose = FALSE,
+                    nShuffle = 1000)
            {
              standardGeneric("sigGENIE3")
            })
@@ -58,7 +62,8 @@ setMethod("sigGENIE3", "matrix",
                    K = "sqrt",
                    nTrees = 1000,
                    nCores = 1,
-                   verbose = FALSE)
+                   verbose = FALSE,
+                   nShuffle = 1000)
           {
             .sigGENIE3(
               exprMatrix = exprMatrix,
@@ -67,7 +72,8 @@ setMethod("sigGENIE3", "matrix",
               K = K,
               nTrees = nTrees,
               nCores = nCores,
-              verbose = verbose
+              verbose = verbose,
+              nShuffle = 1000
             )
           })
 
@@ -79,7 +85,8 @@ setMethod("sigGENIE3", "SummarizedExperiment",
                    K = "sqrt",
                    nTrees = 1000,
                    nCores = 1,
-                   verbose = FALSE)
+                   verbose = FALSE,
+                   nShuffle = 1000)
           {
             if (length(SummarizedExperiment::assays(exprMatrix)) > 1)
               warning("More than 1 assays are available. Only using the first one.")
@@ -91,7 +98,8 @@ setMethod("sigGENIE3", "SummarizedExperiment",
               K = K,
               nTrees = nTrees,
               nCores = nCores,
-              verbose = verbose
+              verbose = verbose,
+              nShuffle = 1000
             )
           })
 
@@ -103,7 +111,8 @@ setMethod("sigGENIE3", "ExpressionSet",
                    K = "sqrt",
                    nTrees = 1000,
                    nCores = 1,
-                   verbose = FALSE)
+                   verbose = FALSE,
+                   nShuffle = 1000)
           {
             exprMatrix <- Biobase::exprs(exprMatrix)
             .sigGENIE3(
@@ -113,7 +122,8 @@ setMethod("sigGENIE3", "ExpressionSet",
               K = K,
               nTrees = nTrees,
               nCores = nCores,
-              verbose = verbose
+              verbose = verbose,
+              nShuffle = 1000
             )
           })
 
@@ -124,7 +134,8 @@ setMethod("sigGENIE3", "ExpressionSet",
            K,
            nTrees,
            nCores,
-           verbose)
+           verbose,
+           nShuffle)
   {
     .checkArguments(
       exprMatrix = exprMatrix,
@@ -133,7 +144,8 @@ setMethod("sigGENIE3", "ExpressionSet",
       K = K,
       nTrees = nTrees,
       nCores = nCores,
-      verbose = verbose
+      verbose = verbose,
+      nShuffle = nShuffle
     )
     
     if (is.numeric(regulators))
@@ -224,9 +236,8 @@ setMethod("sigGENIE3", "ExpressionSet",
     print(nCores)
     print(!foreach::getDoParRegistered())
     # compute importances for every target gene
-    #if(nCores==1 && !foreach::getDoParRegistered())
-
-    # serial computing
+    # random forests are not parallelized, but individual null distribution estimation
+    # are
     if (verbose)
       message("Using 1 core.")
     for (targetName in targetNames)
@@ -258,8 +269,6 @@ setMethod("sigGENIE3", "ExpressionSet",
       
       # By default, grow fully developed trees
       
-      
-      
       rf <-
         rfPermute::rfPermute(
           x,
@@ -268,14 +277,12 @@ setMethod("sigGENIE3", "ExpressionSet",
           ntree = nTrees,
           replace = FALSE,
           nodesize = 1,
-          nrep = 200,
+          nrep = nShuffle,
           num.cores = nCores
         )
       
       pvals <- rfPermute::rp.importance(rf)[,"IncNodePurity.pval"]
-      print(head(pvals))
       pvals.names <- names(pvals)
-      print(head(pvals.names))
       pvalMatrix[pvals.names, targetName] <- pvals
 
       fdr <- p.adjust(pvals, method = "fdr")
@@ -307,7 +314,8 @@ setMethod("sigGENIE3", "ExpressionSet",
            K,
            nTrees,
            nCores,
-           verbose)
+           verbose,
+           nShuffle)
   {
     ############################################################
     # check input arguments
@@ -345,6 +353,10 @@ setMethod("sigGENIE3", "ExpressionSet",
     
     if (!is.numeric(nTrees) || nTrees < 1) {
       stop("Parameter nTrees should be a stricly positive integer.")
+    }
+    
+    if (!is.numeric(nShuffle) || nShuffle < 1) {
+      stop("Parameter nShuffle should be a stricly positive integer.")
     }
     
     if (!is.null(regulators))
